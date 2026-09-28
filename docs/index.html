@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股市场脉搏 · A-Share Market Pulse</title>
+<meta name="description" content="A股盘中快照：指数走势、市场宽度、行业板块涨跌与主力资金流向，每交易日自动更新。">
+<script src="vendor/echarts.min.js"></script>
+<script src="data/market.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --line: #e5e7eb;
+    --ink: #111827;
+    --ink-2: #4b5563;
+    --ink-3: #9ca3af;
+    --up: #d92b2b;        /* A股惯例：涨=红 */
+    --up-soft: #fef2f2;
+    --down: #16a34a;      /* 跌=绿 */
+    --down-soft: #f0fdf4;
+    --accent: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 20px 56px; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-bottom: 22px; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: .5px; font-weight: 650; }
+  h1 span { font-size: 13px; font-weight: 400; color: var(--ink-3); letter-spacing: 1px; margin-left: 8px; }
+  .meta { color: var(--ink-3); font-size: 12.5px; margin-left: auto; text-align: right; }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  .kpis {
+    display: grid; gap: 12px; margin-bottom: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .kpi {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .kpi .label { font-size: 12px; color: var(--ink-3); letter-spacing: .3px; }
+  .kpi .value { font-size: 25px; font-weight: 640; line-height: 1.25; margin-top: 4px; }
+  .kpi .sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 8px; display: flex; }
+  .bar i { display: block; height: 100%; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 16px;
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 14px; font-weight: 620; color: var(--ink);
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .card h2 small { font-weight: 400; font-size: 11.5px; color: var(--ink-3); }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid .card { margin-bottom: 0; }
+  .span2 { grid-column: span 2; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .span2 { grid-column: span 1; } }
+
+  .chart { width: 100%; height: 300px; }
+  .chart.tall { height: 380px; }
+
+  ul.insights { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ul.insights li {
+    border-left: 3px solid var(--ink-3); padding: 2px 0 2px 12px; color: var(--ink-2);
+  }
+  ul.insights li.good { border-color: var(--up); }
+  ul.insights li.bad { border-color: var(--down); }
+  ul.insights li.warn { border-color: #f59e0b; }
+  ul.insights li.neutral { border-color: #cbd5e1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 7px 6px; border-bottom: 1px solid #f1f2f4; }
+  th { color: var(--ink-3); font-weight: 500; font-size: 11.5px; letter-spacing: .3px; }
+  td:first-child, th:first-child { text-align: left; }
+  tbody tr:last-child td { border-bottom: none; }
+  .code { color: var(--ink-3); font-size: 11.5px; margin-left: 6px; }
+
+  footer { color: var(--ink-3); font-size: 12px; margin-top: 26px; line-height: 1.8; }
+  footer b { color: var(--ink-2); font-weight: 600; }
+  .empty { color: var(--ink-3); font-size: 13px; padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>A股市场脉搏<span>A-SHARE MARKET PULSE</span></h1>
+    <div class="meta">
+      快照时间 <b id="ts">—</b><br>
+      数据源：东方财富公开行情接口 · 每交易日自动更新
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="card">
+    <h2>今日读数 <small>由脚本按规则自动生成，只陈述数据支持的事实</small></h2>
+    <ul class="insights" id="insights"></ul>
+  </section>
+
+  <section class="grid">
+    <div class="card span2">
+      <h2>主要指数 · 近 30 日走势 <small>以区间首日 = 0% 归一化</small></h2>
+      <div id="chart-index" class="chart tall"></div>
+    </div>
+
+    <div class="card">
+      <h2>市场宽度 <small>沪深两市涨跌家数</small></h2>
+      <div id="chart-breadth" class="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>行业板块涨跌幅 <small>领涨 / 领跌各 6</small></h2>
+      <div id="chart-sector" class="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>主力资金流向 <small>行业板块 · 单位亿元</small></h2>
+      <div id="chart-money" class="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>主力净流入个股 TOP10</h2>
+      <table id="tbl-inflow"></table>
+    </div>
+
+    <div class="card span2">
+      <h2>历史轨迹 <small>上涨占比与两市成交额逐日积累</small></h2>
+      <div id="chart-history" class="chart"></div>
+    </div>
+  </section>
+
+  <footer>
+    <b>口径说明：</b>涨跌家数取上证综指与深证综指成分合计，覆盖沪深两市全部 A 股；
+    两市成交额同为综指口径（深证成指仅含 500 只成分股，不能代表全市场）。
+    涨停 / 跌停按涨跌幅绝对值 ≥ 9.8% 统计，未区分主板 10% 与创业板、科创板 20% 的幅度差异。
+    「主力资金」为东方财富口径的大单与超大单净额，不等同于真实机构行为。<br>
+    <b>免责声明：</b>本项目为数据可视化练习，所有数据仅供参考，不构成任何投资建议。
+  </footer>
+</div>
+
+<script>
+(function () {
+  const D = window.__MARKET__;
+  const HIST = window.__HISTORY__ || [];
+  if (!D) {
+    document.querySelector('.wrap').insertAdjacentHTML('afterbegin',
+      '<div class="empty">数据未加载：请先运行 <code>python scripts/fetch_data.py</code> 生成 docs/data/market.js</div>');
+    return;
+  }
+
+  const UP = '#d92b2b', DOWN = '#16a34a', GREY = '#94a3b8';
+  const CHART_FONT = '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  const fmt = (v, n = 2) => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toFixed(n);
+  const sign = v => (v > 0 ? '+' : '') + fmt(v);
+  const yi = v => v / 1e8;
+  const cls = v => (v > 0 ? 'up' : (v < 0 ? 'down' : ''));
+
+  document.getElementById('ts').textContent = D.generated_at || '—';
+
+  /* ---------- KPI ---------- */
+  const sh = (D.indexes || []).find(i => i.name === '上证指数') || (D.indexes || [])[0] || {};
+  const b = D.breadth || {};
+  const total = (b.up || 0) + (b.down || 0) + (b.flat || 0);
+  const upRatio = total ? (b.up / total * 100) : 0;
+  const lim = D.limits || {};
+
+  const kpis = [
+    {
+      label: '上证指数', value: fmt(sh.price),
+      sub: sign(sh.change_pct) + '%　' + sign(sh.change) + ' 点',
+      cls: cls(sh.change_pct)
+    },
+    {
+      label: '两市成交额', value: fmt(yi(D.turnover || 0), 0) + '<span style="font-size:14px"> 亿</span>',
+      sub: '沪深综指口径', cls: ''
+    },
+    {
+      label: '涨跌家数', value: (b.up || 0) + ' / ' + (b.down || 0),
+      sub: '上涨占比 ' + fmt(upRatio, 1) + '%',
+      cls: '', bar: [[upRatio, UP], [100 - upRatio, GREY]]
+    },
+    {
+      label: '涨停 / 跌停', value: (lim.limit_up || 0) + ' / ' + (lim.limit_down || 0),
+      sub: '涨跌幅绝对值 ≥ 9.8%', cls: ''
+    },
+    {
+      label: '主力净流入（板块 TOP20）',
+      value: sign(yi(D.net_inflow_top20 || 0), 0) + '<span style="font-size:14px"> 亿</span>',
+      sub: '行业板块合计', cls: cls(D.net_inflow_top20)
+    }
+  ];
+
+  document.getElementById('kpis').innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="label">${k.label}</div>
+      <div class="value num ${k.cls}">${k.value}</div>
+      <div class="sub num">${k.sub}</div>
+      ${k.bar ? `<div class="bar">${k.bar.map(([w, c]) => `<i style="width:${w}%;background:${c}"></i>`).join('')}</div>` : ''}
+    </div>`).join('');
+
+  /* ---------- 今日读数 ---------- */
+  document.getElementById('insights').innerHTML =
+    (D.insights || []).map(i => `<li class="${i.tone}">${i.text}</li>`).join('') ||
+    '<li class="neutral">暂无读数。</li>';
+
+  /* ---------- 通用 ECharts 配置片段 ---------- */
+  const baseGrid = { left: 8, right: 16, top: 24, bottom: 8, containLabel: true };
+  const axisStyle = {
+    axisLine: { lineStyle: { color: '#e5e7eb' } },
+    axisTick: { show: false },
+    axisLabel: { color: '#6b7280', fontSize: 11, fontFamily: CHART_FONT },
+    splitLine: { lineStyle: { color: '#f1f2f4' } }
+  };
+  const tipStyle = {
+    backgroundColor: 'rgba(17,24,39,.92)', borderWidth: 0,
+    textStyle: { color: '#fff', fontSize: 12, fontFamily: CHART_FONT },
+    padding: [8, 12]
+  };
+  const charts = [];
+  function mount(id, option) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const c = echarts.init(el);
+    c.setOption(option);
+    charts.push(c);
+  }
+  window.addEventListener('resize', () => charts.forEach(c => c.resize()));
+
+  /* ---------- 指数走势（归一化） ---------- */
+  (function () {
+    const k = D.klines || {};
+    const names = Object.keys(k);
+    if (!names.length) return;
+    const dates = (k[names[0]] || []).map(p => p.date);
+    const series = names.map((name, idx) => {
+      const pts = k[name] || [];
+      const first = pts.length ? pts[0].close : 0;
+      const palette = ['#334155', '#d92b2b', '#2563eb', '#f59e0b'];
+      return {
+        name, type: 'line', smooth: true, symbol: 'none',
+        lineStyle: { width: 1.8 }, itemStyle: { color: palette[idx % 4] },
+        data: pts.map(p => first ? +((p.close / first - 1) * 100).toFixed(2) : 0)
+      };
+    });
+    mount('chart-index', {
+      tooltip: Object.assign({ trigger: 'axis', valueFormatter: v => sign(v) + '%' }, tipStyle),
+      legend: { top: 0, right: 0, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 11.5, color: '#4b5563', fontFamily: CHART_FONT } },
+      grid: Object.assign({}, baseGrid, { top: 34 }),
+      xAxis: Object.assign({ type: 'category', data: dates, boundaryGap: false }, axisStyle, { splitLine: { show: false } }),
+      yAxis: Object.assign({ type: 'value', axisLabel: { color: '#6b7280', fontSize: 11, formatter: '{value}%' } }, axisStyle),
+      series
+    });
+  })();
+
+  /* ---------- 市场宽度 ---------- */
+  (function () {
+    mount('chart-breadth', {
+      tooltip: Object.assign({ trigger: 'item', formatter: p => `${p.name}：${p.value} 家（${p.percent}%）` }, tipStyle),
+      legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11.5, color: '#4b5563', fontFamily: CHART_FONT } },
+      series: [{
+        type: 'pie', radius: ['52%', '76%'], center: ['50%', '44%'],
+        avoidLabelOverlap: true, label: { show: false },
+        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        data: [
+          { name: '上涨', value: b.up || 0, itemStyle: { color: UP } },
+          { name: '平盘', value: b.flat || 0, itemStyle: { color: '#cbd5e1' } },
+          { name: '下跌', value: b.down || 0, itemStyle: { color: DOWN } }
+        ]
+      }],
+      graphic: [{
+        type: 'text', left: 'center', top: '38%',
+        style: { text: fmt(upRatio, 0) + '%', fill: UP, fontSize: 26, fontWeight: 600, fontFamily: CHART_FONT }
+      }, {
+        type: 'text', left: 'center', top: '50%',
+        style: { text: '上涨占比', fill: '#9ca3af', fontSize: 12, fontFamily: CHART_FONT }
+      }]
+    });
+  })();
+
+  /* ---------- 板块涨跌幅：领跌在下、领涨在上 ---------- */
+  (function () {
+    const s = D.sectors || {};
+    const up = (s.by_change || []).slice(0, 6);
+    const down = (s.by_change_down || []).slice(0, 6);
+    const rows = down.slice().reverse().concat(up.slice().reverse());
+    if (!rows.length) return;
+    mount('chart-sector', {
+      tooltip: Object.assign({ trigger: 'axis', axisPointer: { type: 'shadow' },
+        formatter: p => `${p[0].name}<br/>涨跌幅 ${sign(p[0].value)}%` }, tipStyle),
+      grid: Object.assign({}, baseGrid, { left: 4, right: 24 }),
+      xAxis: Object.assign({ type: 'value', axisLabel: { color: '#6b7280', fontSize: 11, formatter: '{value}%' } }, axisStyle),
+      yAxis: Object.assign({ type: 'category', data: rows.map(r => r.name) }, axisStyle,
+        { splitLine: { show: false }, axisLabel: { color: '#4b5563', fontSize: 11.5, fontFamily: CHART_FONT } }),
+      series: [{
+        type: 'bar', barWidth: '62%',
+        data: rows.map(r => ({
+          value: +(r.change_pct || 0).toFixed(2),
+          itemStyle: { color: r.change_pct >= 0 ? UP : DOWN, borderRadius: 2 }
+        }))
+      }]
+    });
+  })();
+
+  /* ---------- 主力资金流向 ---------- */
+  (function () {
+    const s = D.sectors || {};
+    const inList = (s.by_money || []).slice(0, 6);
+    const outList = (s.by_money_out || []).slice(0, 6);
+    const rows = outList.slice().reverse().concat(inList.slice().reverse());
+    if (!rows.length) return;
+    mount('chart-money', {
+      tooltip: Object.assign({ trigger: 'axis', axisPointer: { type: 'shadow' },
+        formatter: p => `${p[0].name}<br/>主力净额 ${sign(p[0].value)} 亿` }, tipStyle),
+      grid: Object.assign({}, baseGrid, { left: 4, right: 24 }),
+      xAxis: Object.assign({ type: 'value', axisLabel: { color: '#6b7280', fontSize: 11 } }, axisStyle),
+      yAxis: Object.assign({ type: 'category', data: rows.map(r => r.name) }, axisStyle,
+        { splitLine: { show: false }, axisLabel: { color: '#4b5563', fontSize: 11.5, fontFamily: CHART_FONT } }),
+      series: [{
+        type: 'bar', barWidth: '62%',
+        data: rows.map(r => ({
+          value: +yi(r.main_net || 0).toFixed(2),
+          itemStyle: { color: r.main_net >= 0 ? UP : DOWN, borderRadius: 2 }
+        }))
+      }]
+    });
+  })();
+
+  /* ---------- 个股表 ---------- */
+  (function () {
+    const rows = ((D.stocks || {}).inflow || []).slice(0, 10);
+    const el = document.getElementById('tbl-inflow');
+    if (!rows.length) { el.innerHTML = '<tr><td class="empty">暂无数据</td></tr>'; return; }
+    el.innerHTML = `
+      <thead><tr><th>名称</th><th>现价</th><th>涨跌幅</th><th>主力净流入(亿)</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td>${r.name}<span class="code">${r.code}</span></td>
+          <td class="num">${fmt(r.price)}</td>
+          <td class="num ${cls(r.change_pct)}">${sign(r.change_pct)}%</td>
+          <td class="num ${cls(r.main_net)}">${sign(yi(r.main_net))}</td>
+        </tr>`).join('')}</tbody>`;
+  })();
+
+  /* ---------- 历史轨迹 ---------- */
+  (function () {
+    if (!HIST.length) {
+      document.getElementById('chart-history').innerHTML =
+        '<div class="empty">时间序列积累中——每运行一次抓取脚本会留下一个快照。</div>';
+      return;
+    }
+    mount('chart-history', {
+      tooltip: Object.assign({ trigger: 'axis' }, tipStyle),
+      legend: { top: 0, right: 0, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 11.5, color: '#4b5563', fontFamily: CHART_FONT } },
+      grid: Object.assign({}, baseGrid, { top: 34, right: 8 }),
+      xAxis: Object.assign({ type: 'category', data: HIST.map(h => h.date) }, axisStyle, { splitLine: { show: false } }),
+      yAxis: [
+        Object.assign({ type: 'value', name: '上涨占比%', nameTextStyle: { color: '#9ca3af', fontSize: 11 }, max: 100 },
+          axisStyle, { axisLabel: { color: '#6b7280', fontSize: 11, formatter: '{value}%' } }),
+        Object.assign({ type: 'value', name: '成交额(亿)', nameTextStyle: { color: '#9ca3af', fontSize: 11 }, position: 'right' },
+          axisStyle, { splitLine: { show: false }, axisLabel: { color: '#6b7280', fontSize: 11 } })
+      ],
+      series: [
+        { name: '两市成交额', type: 'bar', yAxisIndex: 1, barWidth: '42%',
+          itemStyle: { color: '#cbd5e1', borderRadius: [2, 2, 0, 0] },
+          data: HIST.map(h => +yi(h.turnover || 0).toFixed(0)) },
+        { name: '上涨占比', type: 'line', yAxisIndex: 0, smooth: true, symbolSize: 6,
+          lineStyle: { width: 2, color: UP }, itemStyle: { color: UP },
+          data: HIST.map(h => +(h.up_ratio || 0).toFixed(2)) }
+      ]
+    });
+  })();
+})();
+</script>
+</body>
+</html>
