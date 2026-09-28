@@ -179,6 +179,48 @@ def fetch_index_klines(limit: int = 30) -> dict:
     return result
 
 
+def fetch_amount_history(limit: int = 30) -> list:
+    """
+    两市成交额 + 上证涨跌幅的历史序列（日线口径）。
+
+    只在归档不足两天时调用，用于给「历史轨迹」回填——否则第一天页面上
+    只有孤零零一个点，看不出任何趋势。涨跌家数的历史拿不到，留空。
+    """
+    by_date: dict = {}
+    for secid in ("1.000001", "0.399106"):
+        try:
+            data = _get(KLINE_URL, {"secid": secid, "fields1": "f1,f2,f3",
+                                    "fields2": "f51,f57,f59", "klt": 101, "fqt": 1,
+                                    "end": "20500101", "lmt": limit})
+            for line in (data.get("data") or {}).get("klines") or []:
+                parts = line.split(",")
+                if len(parts) < 3:
+                    continue
+                rec = by_date.setdefault(parts[0], {"date": parts[0], "turnover": 0.0,
+                                                    "sh_index": None})
+                rec["turnover"] += _num(parts[1])
+                if secid == "1.000001":
+                    rec["sh_index"] = _num(parts[2])
+        except Exception as exc:  # noqa: BLE001
+            print(f"[warn] 历史成交额回填失败 {secid}: {exc}", file=sys.stderr)
+    return sorted(by_date.values(), key=lambda x: x["date"])
+
+
+def merge_backfill(archives: list, backfill: list) -> list:
+    """回填数据打底，同日期的实拍归档覆盖它。"""
+    by_date = {}
+    for r in backfill:
+        by_date[r["date"]] = {"date": r["date"], "turnover": r["turnover"],
+                              "up": None, "down": None, "flat": None, "up_ratio": None,
+                              "limit_up": None, "limit_down": None,
+                              "sh_index": r["sh_index"], "source": "backfill"}
+    for a in archives:
+        item = dict(a)
+        item["source"] = "snapshot"
+        by_date[a["date"]] = item
+    return sorted(by_date.values(), key=lambda x: x["date"])
+
+
 def fetch_sectors() -> dict:
     """行业板块：涨幅榜 / 跌幅榜 / 主力资金流入榜 / 流出榜。"""
     fields = "f3,f6,f12,f14,f62,f184,f104,f105,f106"
@@ -367,6 +409,13 @@ def main() -> int:
             with open(os.path.join(HIST_DIR, fn), encoding="utf-8") as f:
                 series.append(json.load(f))
     series.sort(key=lambda x: x["date"])
+
+    # 归档不足两天时用日线回填，让第一天就有趋势可看
+    if len(series) < 2:
+        backfill = fetch_amount_history(30)
+        if backfill:
+            series = merge_backfill(series, backfill)
+            print(f"历史轨迹回填 {len(backfill)} 个交易日（成交额 / 上证涨跌幅）")
 
     with open(os.path.join(DATA_DIR, "latest.json"), "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)

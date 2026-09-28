@@ -139,7 +139,7 @@
     </div>
 
     <div class="card span2">
-      <h2>历史轨迹 <small>上涨占比与两市成交额逐日积累</small></h2>
+      <h2>历史轨迹 <small>成交额由指数日线回填 · 涨跌占比自首次运行起逐日记录</small></h2>
       <div id="chart-history" class="chart"></div>
     </div>
   </section>
@@ -148,7 +148,8 @@
     <b>口径说明：</b>涨跌家数取上证综指与深证综指成分合计，覆盖沪深两市全部 A 股；
     两市成交额同为综指口径（深证成指仅含 500 只成分股，不能代表全市场）。
     涨停 / 跌停按涨跌幅绝对值 ≥ 9.8% 统计，未区分主板 10% 与创业板、科创板 20% 的幅度差异。
-    「主力资金」为东方财富口径的大单与超大单净额，不等同于真实机构行为。<br>
+    「主力资金」为东方财富口径的大单与超大单净额，不等同于真实机构行为。
+    历史轨迹中的成交额由指数日线回填（含完整交易日），当日若在盘中手动运行则为盘中值，收盘后自动更新为全日数据。<br>
     <b>免责声明：</b>本项目为数据可视化练习，所有数据仅供参考，不构成任何投资建议。
   </footer>
 </div>
@@ -375,12 +376,16 @@
           axisStyle, { splitLine: { show: false }, axisLabel: { color: '#6b7280', fontSize: 11 } })
       ],
       series: [
-        { name: '两市成交额', type: 'bar', yAxisIndex: 1, barWidth: '42%',
+        // barMaxWidth 很关键：只有一两天数据时，百分比宽度会把柱子拉成一整块灰墙
+        { name: '两市成交额', type: 'bar', yAxisIndex: 1, barWidth: '46%', barMaxWidth: 26,
           itemStyle: { color: '#cbd5e1', borderRadius: [2, 2, 0, 0] },
           data: HIST.map(h => +yi(h.turnover || 0).toFixed(0)) },
+        // 回填的历史只有成交额，没有涨跌家数 —— 用 null 让线断开，而不是画成 0%
         { name: '上涨占比', type: 'line', yAxisIndex: 0, smooth: true, symbolSize: 6,
+          connectNulls: false,
           lineStyle: { width: 2, color: UP }, itemStyle: { color: UP },
-          data: HIST.map(h => +(h.up_ratio || 0).toFixed(2)) }
+          data: HIST.map(h => (h.up_ratio === null || h.up_ratio === undefined)
+            ? null : +Number(h.up_ratio).toFixed(2)) }
       ]
     });
   })();
