@@ -1,13 +1,13 @@
 {
   "date": "2026-09-28",
-  "generated_at": "2026-09-28 09:52:57",
-  "turnover": 526233353959.0826,
-  "up": 1029.0,
-  "down": 4064.0,
-  "flat": 194.0,
-  "up_ratio": 19.46,
+  "generated_at": "2026-09-28 10:07:41",
+  "turnover": 680358922954.8163,
+  "up": 820.0,
+  "down": 4311.0,
+  "flat": 156.0,
+  "up_ratio": 15.51,
   "limit_up": 20,
   "limit_down": 20,
-  "net_inflow_top20": 4432541895.0,
-  "sh_index": -0.91
+  "net_inflow_top20": 4790579158.0,
+  "sh_index": -1.19
 }
